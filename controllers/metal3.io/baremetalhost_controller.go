@@ -52,6 +52,7 @@ const (
 	provisionerNotReadyRetryDelay = time.Second * 30
 	rebootAnnotationPrefix        = "reboot.metal3.io"
 	inspectAnnotationPrefix       = "inspect.metal3.io"
+	hardwareDetailsAnnotation     = inspectAnnotationPrefix + "/hardwaredetails"
 )
 
 // BareMetalHostReconciler reconciles a BareMetalHost object
@@ -152,6 +153,16 @@ func (r *BareMetalHostReconciler) Reconcile(request ctrl.Request) (result ctrl.R
 			}
 			return ctrl.Result{Requeue: true}, nil
 		}
+	}
+
+	// Consume hardwaredetails from annotation if present
+	hwdUpdated := r.updateHardwareDetails(request, host)
+	if hwdUpdated {
+		errStatus := r.Update(context.TODO(), host)
+		if errStatus != nil {
+			return ctrl.Result{}, errors.Wrap(errStatus, "Could not update status from annotation")
+		}
+		return ctrl.Result{Requeue: true}, nil
 	}
 
 	// NOTE(dhellmann): Handle a few steps outside of the phase
@@ -256,6 +267,29 @@ func (r *BareMetalHostReconciler) Reconcile(request ctrl.Request) (result ctrl.R
 
 	logResult(info, result)
 
+	return
+}
+
+// Consume inspect.metal3.io/hardwaredetails when either
+// inspect.metal3.io=disabled or there are no existing HardwareDetails
+func (r *BareMetalHostReconciler) updateHardwareDetails(request ctrl.Request, host *metal3v1alpha1.BareMetalHost) (updated bool) {
+	reqLogger := r.Log.WithValues("baremetalhost", request.NamespacedName)
+	if host.Status.HardwareDetails == nil || inspectionDisabled(host) {
+		objHardwareDetails, err := r.getHardwareDetailsFromAnnotation(host)
+		if err == nil && objHardwareDetails != nil {
+			reqLogger.Info("Setting HardwareDetails from annotation")
+			host.Status.HardwareDetails = objHardwareDetails
+			updated = true
+		}
+	} else {
+		// The hardwaredetails annotation is not needed, as the status is
+		// already present, so remove it.
+		annotations := host.GetAnnotations()
+		if _, present := annotations[hardwareDetailsAnnotation]; present {
+			delete(annotations, hardwareDetailsAnnotation)
+			updated = true
+		}
+	}
 	return
 }
 
@@ -917,6 +951,28 @@ func (r *BareMetalHostReconciler) getHostStatusFromAnnotation(host *metal3v1alph
 		return nil, err
 	}
 	return objStatus, nil
+}
+
+func unmarshalHardwareDetailsAnnotation(content []byte) (*metal3v1alpha1.HardwareDetails, error) {
+	objHardwareDetails := &metal3v1alpha1.HardwareDetails{}
+	if err := json.Unmarshal(content, objHardwareDetails); err != nil {
+		return nil, errors.Wrap(err, "Failed to fetch HardwareDetails from annotation")
+	}
+	return objHardwareDetails, nil
+}
+
+// extract host from HardwareDetails annotation
+func (r *BareMetalHostReconciler) getHardwareDetailsFromAnnotation(host *metal3v1alpha1.BareMetalHost) (*metal3v1alpha1.HardwareDetails, error) {
+	annotations := host.GetAnnotations()
+	if annotations[hardwareDetailsAnnotation] == "" {
+		return nil, nil
+	}
+	content := []byte(annotations[hardwareDetailsAnnotation])
+	objHardwareDetails, err := unmarshalHardwareDetailsAnnotation(content)
+	if err != nil {
+		return nil, err
+	}
+	return objHardwareDetails, nil
 }
 
 func (r *BareMetalHostReconciler) setErrorCondition(request ctrl.Request, host *metal3v1alpha1.BareMetalHost, errType metal3v1alpha1.ErrorType, message string) (err error) {
