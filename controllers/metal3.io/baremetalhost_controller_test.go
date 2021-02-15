@@ -19,6 +19,7 @@ import (
 
 	ctrl "sigs.k8s.io/controller-runtime"
 	fakeclient "sigs.k8s.io/controller-runtime/pkg/client/fake"
+	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
@@ -359,11 +360,19 @@ func TestInspectionDisabledAnnotation(t *testing.T) {
 	assert.True(t, inspectionDisabled(host))
 }
 
+func makeReconcileInfo(host *metal3v1alpha1.BareMetalHost) *reconcileInfo {
+	return &reconcileInfo{
+	log:     logf.Log.WithName("controllers").WithName("BareMetalHost").WithName("host_state_machine"),
+	host:    host,
+	}
+}
+
 func TestHasRebootAnnotation(t *testing.T) {
 	host := newDefaultHost(t)
+	info := makeReconcileInfo(host)
 	host.Annotations = make(map[string]string)
 
-	if hasRebootAnnotation(host) {
+	if hasRebootAnnotation(info) {
 		t.Fail()
 	}
 
@@ -371,20 +380,20 @@ func TestHasRebootAnnotation(t *testing.T) {
 	suffixedAnnotation := rebootAnnotationPrefix + "/foo"
 	host.Annotations[suffixedAnnotation] = ""
 
-	if !hasRebootAnnotation(host) {
+	if !hasRebootAnnotation(info) {
 		t.Fail()
 	}
 
 	delete(host.Annotations, suffixedAnnotation)
 	host.Annotations[rebootAnnotationPrefix] = ""
 
-	if !hasRebootAnnotation(host) {
+	if !hasRebootAnnotation(info) {
 		t.Fail()
 	}
 
 	host.Annotations[suffixedAnnotation] = ""
 
-	if !hasRebootAnnotation(host) {
+	if !hasRebootAnnotation(info) {
 		t.Fail()
 	}
 
@@ -392,7 +401,7 @@ func TestHasRebootAnnotation(t *testing.T) {
 
 	host.Annotations[suffixedAnnotation+"bar"] = ""
 
-	if !hasRebootAnnotation(host) {
+	if !hasRebootAnnotation(info) {
 		t.Fail()
 	}
 

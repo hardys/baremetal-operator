@@ -339,8 +339,8 @@ func (r *BareMetalHostReconciler) credentialsErrorResult(err error, request ctrl
 }
 
 // hasRebootAnnotation checks for existence of reboot annotations and returns true if at least one exist
-func hasRebootAnnotation(host *metal3v1alpha1.BareMetalHost) bool {
-	for annotation := range host.Annotations {
+func hasRebootAnnotation(info *reconcileInfo) bool {
+	for annotation := range info.host.Annotations {
 		if isRebootAnnotation(annotation) {
 			return true
 		}
@@ -765,7 +765,7 @@ func (r *BareMetalHostReconciler) manageHostPower(prov provisioner.Provisioner, 
 
 	provState := info.host.Status.Provisioning.State
 	isProvisioned := provState == metal3v1alpha1.StateProvisioned || provState == metal3v1alpha1.StateExternallyProvisioned
-	if hasRebootAnnotation(info.host) && isProvisioned {
+	if hasRebootAnnotation(info) && isProvisioned {
 		desiredPowerOnState = false
 	}
 
