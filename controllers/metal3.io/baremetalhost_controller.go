@@ -156,7 +156,10 @@ func (r *BareMetalHostReconciler) Reconcile(request ctrl.Request) (result ctrl.R
 	}
 
 	// Consume hardwaredetails from annotation if present
-	hwdUpdated := r.updateHardwareDetails(request, host)
+	hwdUpdated, err := r.updateHardwareDetails(request, host)
+	if err != nil {
+		return ctrl.Result{}, errors.Wrap(err, "Could not update Hardware Details")
+	}
 	if hwdUpdated {
 		errStatus := r.Update(context.TODO(), host)
 		if errStatus != nil {
@@ -272,10 +275,14 @@ func (r *BareMetalHostReconciler) Reconcile(request ctrl.Request) (result ctrl.R
 
 // Consume inspect.metal3.io/hardwaredetails when either
 // inspect.metal3.io=disabled or there are no existing HardwareDetails
-func (r *BareMetalHostReconciler) updateHardwareDetails(request ctrl.Request, host *metal3v1alpha1.BareMetalHost) (updated bool) {
+func (r *BareMetalHostReconciler) updateHardwareDetails(request ctrl.Request, host *metal3v1alpha1.BareMetalHost) (bool, error) {
 	reqLogger := r.Log.WithValues("baremetalhost", request.NamespacedName)
+	updated := false
 	if host.Status.HardwareDetails == nil || inspectionDisabled(host) {
 		objHardwareDetails, err := r.getHardwareDetailsFromAnnotation(host)
+		if err != nil {
+			return false, err
+		}
 		if err == nil && objHardwareDetails != nil {
 			reqLogger.Info("Setting HardwareDetails from annotation")
 			host.Status.HardwareDetails = objHardwareDetails
@@ -290,7 +297,7 @@ func (r *BareMetalHostReconciler) updateHardwareDetails(request ctrl.Request, ho
 			updated = true
 		}
 	}
-	return
+	return updated, nil
 }
 
 func logResult(info *reconcileInfo, result ctrl.Result) {
